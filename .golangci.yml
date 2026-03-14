@@ -1,0 +1,20 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters-settings:
+  custom:
+    loglinter:
+      # Путь к собранному плагину
+      path: ./loglinter.so
+      description: Линтер для проверки лог-записей
+      original-url: github.com/yourusername/loglinter
+
+linters:
+  enable:
+    - loglinter
+    - govet
+    - staticcheck
+
+issues:
+  exclude-use-default: false

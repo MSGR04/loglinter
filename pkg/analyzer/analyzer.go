@@ -6,6 +6,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -80,36 +81,48 @@ func extractLogCall(pass *analysis.Pass, call *ast.CallExpr) *LogCall {
 
 func checkLogMessage(pass *analysis.Pass, logCall *LogCall) {
 	msg := logCall.Message
-	if len(msg) > 0 {
-		firstchar := msg[0]
-		if firstchar >= 'A' && firstchar <= 'Z' {
-			pass.Reportf(logCall.Pos,
-				"лог-сообщение должно начинаться со строчной буквы: %q",
-				msg)
-		}
-	}
 
-	if !isEnglishOnly(msg) {
-		pass.Reportf(logCall.Pos,
-			"лог-сообщение должно содержать только английские символы: %q",
-			msg)
-	}
-
-	if hasSpecialChars(msg) {
-		pass.Reportf(logCall.Pos,
-			"лог-сообщение не должно содержать спецсимволы или эмодзи: %q",
-			msg)
-	}
-
+	// Правило 4: чувствительные данные
 	if hasSensitiveData(msg) {
 		pass.Reportf(logCall.Pos,
 			"лог-сообщение не должно содержать потенциально чувствительные данные: %q",
 			msg)
+		return
+	}
+
+	// Правило 3: спецсимволы и эмодзи
+	if !strings.Contains(msg, "%") && hasSpecialChars(msg) {
+		pass.Reportf(logCall.Pos,
+			"лог-сообщение не должно содержать спецсимволы или эмодзи: %q",
+			msg)
+		return
+	}
+
+	// Правило 2: только английские символы
+	if !strings.Contains(msg, "%") && !isEnglishOnly(msg) {
+		pass.Reportf(logCall.Pos,
+			"лог-сообщение должно содержать только английские символы: %q",
+			msg)
+		return
+	}
+
+	// Правило 1: строчная буква
+	if !strings.Contains(msg, "%") && len(msg) > 0 {
+		firstChar := msg[0]
+		if firstChar >= 'A' && firstChar <= 'Z' {
+			pass.Reportf(logCall.Pos,
+				"лог-сообщение должно начинаться со строчной буквы: %q",
+				msg)
+			return
+		}
 	}
 }
 
 func isEnglishOnly(s string) bool {
 	for _, r := range s {
+		if unicode.IsSpace(r) || unicode.IsDigit(r) {
+			continue
+		}
 		if r > unicode.MaxASCII {
 			if r >= 0x0400 && r <= 0x04FF {
 				return false
@@ -120,23 +133,21 @@ func isEnglishOnly(s string) bool {
 }
 
 func hasSpecialChars(s string) bool {
-	specialChars := "!?.,:;@#$%^&*()-+={}[]|\\/<>`~"
+	specialChars := "!?@#$%^&*()_+={}[]|\\/<>`~"
 
 	for _, r := range s {
+		if (r >= 0x1F300 && r <= 0x1F9FF) ||
+			(r >= 0x2600 && r <= 0x26FF) ||
+			(r >= 0x2700 && r <= 0x27BF) {
+			return true
+		}
+
 		for _, sc := range specialChars {
 			if r == sc {
 				return true
 			}
 		}
-
-		if (r >= 0x1F300 && r <= 0x1F9FF) ||
-			(r >= 0x2600 && r <= 0x26FF) ||
-			(r >= 0x2700 && r <= 0x27BF) ||
-			(r >= 0x1FA70 && r <= 0x1FAFF) {
-			return true
-		}
 	}
-
 	return false
 }
 
@@ -167,22 +178,24 @@ func isKnownLogger(pkg, fn string) bool {
 
 func hasSensitiveData(s string) bool {
 	sensitivePatterns := []string{
-		"password",
-		"passwd",
-		"pwd",
-		"token",
-		"secret",
-		"api_key",
-		"apikey",
-		"auth",
-		"credential",
-		"certificate",
-		"private key",
-		"jwt",
+		`\bpassword\b`,
+		`\bpasswd\b`,
+		`\bpwd\b`,
+		`\btoken\b`,
+		`\bsecret\b`,
+		`\bapi[_-]?key\b`,
+		`\bauth\b`,
+		`\bcredential\b`,
+		`\bcertificate\b`,
+		`\bprivate[_\s]?key\b`,
+		`\bjwt\b`,
 	}
+
 	lowerMsg := strings.ToLower(s)
+
 	for _, pattern := range sensitivePatterns {
-		if strings.Contains(lowerMsg, pattern) {
+		re := regexp.MustCompile(pattern)
+		if re.MatchString(lowerMsg) {
 			return true
 		}
 	}
