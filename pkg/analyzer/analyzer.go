@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"golang.org/x/tools/go/analysis"
@@ -17,6 +18,8 @@ type LogCall struct {
 	Function string
 	Message  string
 	Pos      token.Pos
+	End      token.Pos
+	FullPos  token.Pos
 }
 
 var Analyzer = &analysis.Analyzer{
@@ -24,6 +27,19 @@ var Analyzer = &analysis.Analyzer{
 	Doc:      "Анализирует лог-записи в кодe на соответствие правилам: только строчные буквы, английский язык, отсутствие спецсимволов и эмодзи и потенциально чувствительных данных.",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
+}
+
+func NewAnalyzer() *analysis.Analyzer {
+	config, err := FindConfig()
+	if err != nil {
+		return Analyzer
+	}
+
+	analyzer := *Analyzer
+	analyzer.Run = func(pass *analysis.Pass) (interface{}, error) {
+		return runWithConfig(pass, config)
+	}
+	return &analyzer
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -68,12 +84,19 @@ func extractLogCall(pass *analysis.Pass, call *ast.CallExpr) *LogCall {
 		return nil
 	}
 
+	start, end, ok := findStringPos(pass, call)
+	if !ok {
+		start, end = call.Pos(), call.End()
+	}
+
 	return &LogCall{
 		Call:     call,
 		Package:  pkgName,
 		Function: funcName,
 		Message:  message,
-		Pos:      call.Pos(),
+		Pos:      start,
+		End:      end,
+		FullPos:  call.Pos(),
 	}
 }
 
@@ -118,6 +141,80 @@ func checkLogMessage(pass *analysis.Pass, logCall *LogCall) {
 	}
 }
 
+func suggestLowercaseFix(pass *analysis.Pass, logCall *LogCall, msg string) {
+	fixedMsg := strings.ToLower(string(msg[0])) + msg[1:]
+
+	pass.Report(analysis.Diagnostic{
+		Pos:     logCall.FullPos,
+		End:     logCall.Call.End(),
+		Message: fmt.Sprintf("лог-сообщение должно начинаться со строчной буквы: %q", msg),
+		SuggestedFixes: []analysis.SuggestedFix{
+			{
+				Message: "сделать первую букву строчной",
+				TextEdits: []analysis.TextEdit{
+					{
+						Pos:     logCall.Pos,
+						End:     logCall.End,
+						NewText: []byte(fixedMsg),
+					},
+				},
+			},
+		},
+	})
+}
+
+func suggestSpecialCharsFix(pass *analysis.Pass, logCall *LogCall, msg string) {
+	var fixedMsg strings.Builder
+	for _, r := range msg {
+		if strings.ContainsRune(".,:;_ ", r) {
+			fixedMsg.WriteRune(r)
+			continue
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			fixedMsg.WriteRune(r)
+			continue
+		}
+	}
+
+	if fixedMsg.Len() == 0 {
+		fixedMsg.WriteString("message")
+	}
+
+	pass.Report(analysis.Diagnostic{
+		Pos:     logCall.FullPos,
+		End:     logCall.Call.End(),
+		Message: fmt.Sprintf("лог-сообщение не должно содержать спецсимволы или эмодзи: %q", msg),
+		SuggestedFixes: []analysis.SuggestedFix{
+			{
+				Message: "удалить спецсимволы и эмодзи",
+				TextEdits: []analysis.TextEdit{
+					{
+						Pos:     logCall.Pos,
+						End:     logCall.End,
+						NewText: []byte(fixedMsg.String()),
+					},
+				},
+			},
+		},
+	})
+}
+
+func findStringPos(pass *analysis.Pass, call *ast.CallExpr) (token.Pos, token.Pos, bool) {
+	if len(call.Args) == 0 {
+		return 0, 0, false
+	}
+
+	lit, ok := call.Args[0].(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return 0, 0, false
+	}
+	start := lit.Pos() + 1
+
+	end := lit.End() - 1
+
+	return start, end, true
+}
+
 func isEnglishOnly(s string) bool {
 	for _, r := range s {
 		if unicode.IsSpace(r) || unicode.IsDigit(r) {
@@ -133,13 +230,26 @@ func isEnglishOnly(s string) bool {
 }
 
 func hasSpecialChars(s string) bool {
-	specialChars := "!?@#$%^&*()_+={}[]|\\/<>`~"
+	specialChars := "!?@#$%^&*()+={}[]|\\/<>`~"
+
+	allowedChars := ".,:;_"
 
 	for _, r := range s {
 		if (r >= 0x1F300 && r <= 0x1F9FF) ||
 			(r >= 0x2600 && r <= 0x26FF) ||
 			(r >= 0x2700 && r <= 0x27BF) {
 			return true
+		}
+
+		isAllowed := false
+		for _, allowed := range allowedChars {
+			if r == allowed {
+				isAllowed = true
+				break
+			}
+		}
+		if isAllowed {
+			continue
 		}
 
 		for _, sc := range specialChars {
@@ -215,4 +325,8 @@ func extractStringArg(pass *analysis.Pass, arg ast.Expr) string {
 		}
 	}
 	return ""
+}
+
+func init() {
+	Analyzer = NewAnalyzer()
 }

@@ -1,0 +1,14 @@
+{
+  "enable_lowercase": true,
+  "enable_english_only": true,
+  "enable_special_chars": true,
+  "enable_sensitive_data": true,
+  "sensitive_patterns": [
+    "password",
+    "token",
+    "secret",
+    "api_key",
+    "custom_secret"
+  ],
+  "log_packages": ["log", "slog", "zap", "logrus"]
+}

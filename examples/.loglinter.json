@@ -1,0 +1,9 @@
+{
+  "enable_sensitive_data": true,
+  "use_default_patterns": false,
+  "sensitive_patterns": [
+    "confidential",
+    "secret_.*",
+    "internal_[0-9]+"
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "enable_lowercase": false,
+  "enable_english_only": true,
+  "enable_special_chars": true,
+  "enable_sensitive_data": true,
+  "use_default_patterns": true
+}

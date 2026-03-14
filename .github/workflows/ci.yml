@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: ['1.21', '1.22']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Build plugin (Linux)
+        run: go build -buildmode=plugin -o loglinter.so plugin/main.go
+
+      - name: Test examples
+        run: |
+          go install ./cmd/loglinter
+          cd examples/01_basic && loglinter check_rules.go
+          cd ../02_config && loglinter config_test.go
+          cd ../03_custom_patterns && loglinter custom_patterns.go
+          cd ../04_regex_patterns && loglinter regex_patterns.go

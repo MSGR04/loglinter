@@ -3,6 +3,7 @@ package analyzer
 import (
 	"go/ast"
 	"regexp"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
@@ -29,9 +30,10 @@ type Config struct {
 	EnableSpecialChars  bool     `json:"enable_special_chars"`
 	EnableSensitiveData bool     `json:"enable_sensitive_data"`
 	SensitivePatterns   []string `json:"sensitive_patterns"`
+	UseDefaultPatterns  bool     `json:"use_default_patterns"`
 }
 
-func NewAnalyzerWithConfig(config Config) *analysis.Analyzer {
+func NewAnalyzerWithConfig(config *Config) *analysis.Analyzer {
 	analyzer := *Analyzer
 	analyzer.Run = func(pass *analysis.Pass) (interface{}, error) {
 		return runWithConfig(pass, config)
@@ -39,7 +41,7 @@ func NewAnalyzerWithConfig(config Config) *analysis.Analyzer {
 	return &analyzer
 }
 
-func runWithConfig(pass *analysis.Pass, config Config) (interface{}, error) {
+func runWithConfig(pass *analysis.Pass, config *Config) (interface{}, error) {
 	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	nodeFilter := []ast.Node{
@@ -58,48 +60,54 @@ func runWithConfig(pass *analysis.Pass, config Config) (interface{}, error) {
 	return nil, nil
 }
 
-func checkLogMessageWithConfig(pass *analysis.Pass, logCall *LogCall, config Config) {
+func checkLogMessageWithConfig(pass *analysis.Pass, logCall *LogCall, config *Config) {
 	msg := logCall.Message
 
-	if config.EnableLowercase && len(msg) > 0 {
-		firstchar := msg[0]
-		if firstchar >= 'A' && firstchar <= 'Z' {
-			pass.Reportf(logCall.Pos,
-				"лог-сообщение должно начинаться со строчной буквы: %q",
-				msg)
-		}
-	}
-
-	if config.EnableEnglishOnly && !isEnglishOnly(msg) {
-		pass.Reportf(logCall.Pos,
-			"лог-сообщение должно содержать только английские символы: %q",
-			msg)
-	}
-
-	if config.EnableSpecialChars && hasSpecialChars(msg) {
-		pass.Reportf(logCall.Pos,
-			"лог-сообщение не должно содержать спецсимволы или эмодзи: %q",
-			msg)
-	}
-
+	// Правило 4: чувствительные данные
 	if config.EnableSensitiveData {
-		for _, pattern := range defaultSensitivePatterns {
-			if pattern.MatchString(msg) {
-				pass.Reportf(logCall.Pos,
-					"лог-сообщение не должно содержать потенциально чувствительные данные: %q",
-					msg)
-				break
-			}
-		}
-
 		for _, patternStr := range config.SensitivePatterns {
 			pattern, err := regexp.Compile("(?i)" + patternStr)
 			if err == nil && pattern.MatchString(msg) {
 				pass.Reportf(logCall.Pos,
 					"лог-сообщение не должно содержать потенциально чувствительные данные: %q",
 					msg)
-				break
+				return
 			}
+		}
+
+		if config.UseDefaultPatterns {
+			for _, pattern := range defaultSensitivePatterns {
+				if pattern.MatchString(msg) {
+					pass.Reportf(logCall.Pos,
+						"лог-сообщение не должно содержать потенциально чувствительные данные: %q",
+						msg)
+					return
+				}
+			}
+		}
+	}
+
+	// Правило 3: спецсимволы и эмодзи
+	if config.EnableSpecialChars && !strings.Contains(msg, "%") && hasSpecialChars(msg) {
+		// Вызываем функцию из analyzer.go
+		suggestSpecialCharsFix(pass, logCall, msg)
+		return
+	}
+
+	// Правило 2: только английские символы
+	if config.EnableEnglishOnly && !strings.Contains(msg, "%") && !isEnglishOnly(msg) {
+		pass.Reportf(logCall.Pos,
+			"лог-сообщение должно содержать только английские символы: %q",
+			msg)
+		return
+	}
+
+	// Правило 1: строчная буква
+	if config.EnableLowercase && !strings.Contains(msg, "%") && len(msg) > 0 {
+		firstChar := msg[0]
+		if firstChar >= 'A' && firstChar <= 'Z' {
+			suggestLowercaseFix(pass, logCall, msg)
+			return
 		}
 	}
 }
