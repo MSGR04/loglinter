@@ -270,6 +270,16 @@ lint:
 | [`06_nested/`](examples/06_nested) | Поиск конфига в родительской папке |
 
 ## 🧪 Тестирование
+```bash
+# Запустить тесты линтера
+go test ./pkg/analyzer/...
+
+# Проверить на примерах
+loglinter examples/...
+
+# Проверить с авто-исправлением
+loglinter -fix examples/fix_test.go
+```
 
 ### Запуск примеров
 
@@ -321,19 +331,6 @@ cd ../06_nested/cmd/app
 loglinter main.go
 ```
 
----
-## 🧪 Тестирование
-
-```bash
-# Запустить тесты линтера
-go test ./pkg/analyzer/...
-
-# Проверить на примерах
-loglinter examples/...
-
-# Проверить с авто-исправлением
-loglinter -fix examples/fix_test.go
-```
 
 ## 📋 Требования
 
