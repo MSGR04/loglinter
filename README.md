@@ -269,12 +269,58 @@ lint:
 | [`05_fix/`](examples/05_fix) | Авто-исправление |
 | [`06_nested/`](examples/06_nested) | Поиск конфига в родительской папке |
 
-Запуск примеров:
+## 🧪 Тестирование
+
+### Запуск примеров
+
+Базовые проверки
+
 ```bash
-cd examples/01_basic && loglinter check_rules.go
-cd ../02_config && loglinter config_test.go
-# и так далее..
+cd examples/01_basic
+loglinter check_rules.go
 ```
+
+Тестирование конфигурации
+
+```bash
+cd ../02_config
+loglinter config_test.go
+```
+
+Кастомные паттерны
+
+```bash
+cd ../03_custom_patterns
+loglinter custom_patterns.go
+```
+
+Regex паттерны
+
+```bash
+cd ../04_regex_patterns
+loglinter regex_patterns.go
+```
+Авто-исправление
+
+```bash
+cd ../05_fix
+# Посмотреть исходный файл
+cat fix_test.go
+
+# Запустить с авто-исправлением
+loglinter -fix fix_test.go
+
+# Посмотреть результат
+cat fix_test.go
+```
+
+Поиск конфига в родительской папке
+
+```bash
+cd ../06_nested/cmd/app
+loglinter main.go
+```
+
 ---
 ## 🧪 Тестирование
 
